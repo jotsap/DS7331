@@ -1,28 +1,28 @@
 ## Telco Churn Data Files  
-https://www.kaggle.com/raumonsa11/churn-telco-europa  
+https://www.kaggle.com/blastchar/telco-customer-churn  
   
-train.csv  
-test.csv  
+churn.csv    
 
-*Data Dictionary*
-* CETEL_NUMBER  
-* CNI_CUSTOMER  
-* DAYS_LIFE  
-* DEVICE_TECNOLOGY  
-* MIN_PLAN  
-* PRICE_PLAN  
-* TOT_MIN_CALL_OUT  
-* AVG_MIN_CALL_OUT_3  
-* TOT_MIN_IN_ULT_MES  
-* AVG_MIN_IN_3  
-* ROA_LASTMONTH  
-* ROACETEL_LAST_MONTH  
-* DEVICE  
-* TEC_ANT_DATA  
-* STATE_DATA  
-* CITY_DATA  
-* TEC_ANT_VOICE  
-* STATE_VOICE  
-* CITY_VOICE  
-* CHURN  
+**Data Dictionary**
+* customerIDCustomer ID
+* genderWhether the customer is a male or a female
+* SeniorCitizenWhether the customer is a senior citizen or not (1, 0)
+* PartnerWhether the customer has a partner or not (Yes, No)
+* DependentsWhether the customer has dependents or not (Yes, No)
+* tenureNumber of months the customer has stayed with the company
+* PhoneServiceWhether the customer has a phone service or not (Yes, No)
+* MultipleLinesWhether the customer has multiple lines or not (Yes, No, No phone service)
+* InternetServiceCustomer’s internet service provider (DSL, Fiber optic, No)
+* OnlineSecurityWhether the customer has online security or not (Yes, No, No internet service)
+* OnlineBackupWhether the customer has online backup or not (Yes, No, No internet service)
+* DeviceProtectionWhether the customer has device protection or not (Yes, No, No internet service)
+* TechSupportWhether the customer has tech support or not (Yes, No, No internet service)
+* StreamingTVWhether the customer has streaming TV or not (Yes, No, No internet service)
+* StreamingMoviesWhether the customer has streaming movies or not (Yes, No, No internet service)
+* ContractThe contract term of the customer (Month-to-month, One year, Two year)
+* PaperlessBillingWhether the customer has paperless billing or not (Yes, No)
+* PaymentMethodThe customer’s payment method (Electronic check, Mailed check, Bank transfer (automatic), Credit card (automatic))
+* MonthlyChargesThe amount charged to the customer monthly
+* TotalChargesThe total amount charged to the customer
+* ChurnWhether the customer churned or not (Yes or No)  
 
