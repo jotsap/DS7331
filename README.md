@@ -2,7 +2,7 @@
 SMU Machine Learning 1 DS7331
   
 Telco Churn Data Set  
-https://www.kaggle.com/raumonsa11/churn-telco-europa  
+https://www.kaggle.com/blastchar/telco-customer-churn  
   
 
 Jeremy Otsap - jotsap@mail.smu.edu  
