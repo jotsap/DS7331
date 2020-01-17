@@ -103,7 +103,14 @@ ggplot(churn.df, mapping = aes(x = SeniorCitizenFactor, fill = Churn, color = ge
   theme(legend.position = 'bottom' )
 
 
-
+# CHURN BOXPLOT: Tenure in Months 
+boxplot(tenure ~ Churn, data = churn.df, 
+        col='blue', 
+        horizontal = T,
+        main = 'Tenure by Customer Churn',
+        xlab = "Months",
+        stats = T
+        )
 
 
 
