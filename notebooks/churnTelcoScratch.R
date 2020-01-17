@@ -90,17 +90,17 @@ churn.df %>% count(Churn)
 
 
 # LINEAR GRAPH
-ggplot(train) +
-  geom_freqpoly(mapping = aes(x = DAYS_LIFE, color = CHURN_FACTOR), binwidth = 1) +
+ggplot(churn.df) +
+  geom_freqpoly(mapping = aes(x = MonthlyCharges, color = Churn), binwidth = 1) +
   guides(fill=FALSE) +
-  theme(legend.position = "none")
+  theme(legend.position = "bottom")
 
 
 # CATEGORICAL GRAPH
-ggplot(train, mapping = aes(x = DEVICE_FACTOR, fill = CHURN_FACTOR, color = CHURN_FACTOR)) +
+ggplot(churn.df, mapping = aes(x = SeniorCitizenFactor, fill = Churn, color = gender)) +
   geom_bar(stat='count', position='fill') +
-  labs(x = 'DEVICE_FACTOR') +
-  theme(legend.position = "none")
+  labs(x = 'SeniorCitizenFactor') +
+  theme(legend.position = 'bottom' )
 
 
 
