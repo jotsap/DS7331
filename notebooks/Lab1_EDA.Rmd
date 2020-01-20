@@ -1,0 +1,190 @@
+---
+title: "DS7331_Lab1"
+author: "Jeremy Otsap, Shawn Jung, Lance Dacy, Amber Burnett"
+date: "1/16/2020"
+output: 
+  html_document:
+    keep_md: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+# load libraries
+
+library(tidyverse) # data wrangling
+library(modelr) # factor manipulation
+library(skimr) # data exploration
+library(ggplot2) #visualization
+library(corrplot) # visualisation
+library(VIM) # missing values
+library(caret) # modeling
+library(e1071) # modeling
+library(randomForest) # classification
+library(xgboost) # classification
+library(ROCR) # model validation
+
+```
+
+# SMU Machine Learning 1 DS7331  
+## Lab 1
+  
+**Telco Churn Data Set**  
+https://www.kaggle.com/blastchar/telco-customer-churn  
+  
+
+* Jeremy Otsap - jotsap@mail.smu.edu  
+* Shawn Jung - shawnj@mail.smu.edu  
+* Lance Dacy - ldacy@mail.smu.edu  
+* Amber Burnett - aburnett@mail.smu.edu  
+
+
+### Business Understanding  
+
+We are looking at customer data from a north American Telco provider. The purpose being to retain existing customers. In telecommunications, the estimated cost of new customer acquisition is approximately 5x higher than retaining an existing customer. Furthermore, only a third of customers switch carriers due to lower prices; more and more factors such as dissatisfaction with quality of service, advancing technology and media features, competitors having better cellular coverage, and poorly implemented loyalty programs are all contributing to customer attrition.  
+  
+### Data Understanding  
+  
+**Data Dictionary**  
+We are provided a CSV set of 21 features and 7043 anonymyzed customers.
+
+* **customerID**: Unique alpha-numeric string to anonymously represent an individual customer
+* **gender**: Categorical String value to represent customer's gender (Male or Female)
+* **SeniorCitizen**: Boolean int value to show whether the customer is a senior citizen or not (1, 0)
+* **Partner**: Boolean string value showing whether the customer has a partner or not (Yes, No)
+* **Dependents**: Boolean string value showing whether the customer has dependents or not (Yes, No)
+* **tenure**: Numeric value showing number of months the customer has stayed with the company
+* **PhoneService**: Boolean string value showing whether the customer has a phone service or not (Yes, No)
+* **MultipleLines**: Categorical string value that shows if the customer has multiple lines or not (Yes, No, No phone service)
+* **InternetService**: Categorical string value that shows the customer’s internet service provider (DSL, Fiber optic, No)
+* **OnlineSecurity**: Categorical string value showing whether the customer has online security or not (Yes, No, No internet service)
+* **OnlineBackup**: Categorical string showing whether the customer has online backup or not (Yes, No, No internet service)
+* **DeviceProtection**: Categorical string showing whether the customer has device protection or not (Yes, No, No internet service)
+* **TechSupport**: Categorical string showing whether the customer has tech support or not (Yes, No, No internet service)
+* **StreamingTV**: Categorical string showing whether the customer has streaming TV or not (Yes, No, No internet service)
+* **StreamingMovies**: Categorical string showing whether the customer has streaming movies or not (Yes, No, No internet service)
+* **Contract**: Categorical string that represents the contract term (Month-to-month, One year, Two year)
+* **PaperlessBilling**: Boolean string showing whether the customer has paperless billing or not (Yes, No)
+* **PaymentMethod**: Categorical string that shows the customer’s payment method (Electronic check, Mailed check, Bank transfer (automatic), Credit card (automatic))
+* **MonthlyCharges**: Numeric value showing the amount charged to the customer each month
+* **TotalCharges**: Numeric value showing the total amount charged to the customer
+* **Churn**: Boolean string showing whether or not the customer 'churned' or terminated ser
+vices (Yes or No)  
+
+
+### Initial Data Examination
+
+As we can see most of the predictor variables are categorical, as is the response "Churn." However there are a few numerical variables as well specifically relating to the customer's spend, as well as the length of their contract.
+
+
+```{r}
+
+# dataframe
+churn.df <- read.csv('https://raw.githubusercontent.com/jotsap/DS7331/master/data/churn.csv')
+
+str(churn.df)
+head(churn.df)
+
+```
+
+
+CustomerID is simply a placeholder value to represent an anonomyzed customer and is not necessary for analysis. Thus we will remove it. Additionally R can convert a data type to factor, thus we will convert the numerical SeniorCitizen variable to a factor and store it as a separate column
+
+
+```{r}
+
+# CustomerID not necessary for analysis
+churn.df %>% select(-customerID) -> churn.df
+churn.df$customerID <- NULL
+
+# make FACTOR flavor of SeniorCitizen column
+churn.df <- churn.df %>% mutate(
+  SeniorCitizen = factor(SeniorCitizen)
+)
+
+glimpse(churn.df)
+
+```
+
+
+Now lets get a better look at our data using the skim() command. We can see a breakdown of variables by their types, as well as the ratio of counts for categorical variables, or range of values for numeric. 
+
+One thing we notice immediately is there are 11 missing values in the TotalCharges parameter. *Note: we will address this shortly; however being such a small number it should not significantly impact our initial exploration*
+
+A few things become immediately apparent as well. Firstly this sample has roughly a one third attrition rate looking at the Churn column: 1869 Yes vs 5174 No.
+
+The output for SeniorCitizen is more useful now as a factor rather than the numeric representation, and because we did this it allows us to see that there are almost 6 times as many non-senior adults as seniors: 5901 vs 1142. However, when we look at gender we see a fairly even representation: 3555 males vs 3488 females. 
+
+So we are starting to get a sense of the customer sample being a fairly even collection of males and females, however most of them are likely *not* retired and still working professionally. However, to get better insight we will now create some visualizations of our data
+
+
+```{r}
+skim(churn.df)
+
+# Churn ratio
+table(churn.df$Churn) %>% pie(., main = "Churn Comparison")
+
+# Gender ratio
+table(churn.df$gender) %>% pie(., main = "Gender Comparison")
+
+# Senior ratio
+table(churn.df$SeniorCitizen) %>% pie(., , main = "SeniorCitizen")
+
+```
+
+
+To do more advanced visualization we will split the data into 2 separate dataframes: numeric and categorical. However both will contain the response variable Churn. This will allow us to more easily make appropriate visualizations based on the type of variables we are considering
+
+First lets look at boxplot of the different numerical variables for each sample of customers: those that terminated services vs those that stayed
+
+```{r}
+
+# split dataframes: numeric
+churnNum.df <- churn.df %>% select(tenure, MonthlyCharges, TotalCharges, Churn)
+
+# create a vector of numNames
+churnNumNames <- names(churnNum.df)
+#remove Churn response
+churnNumNames[-4] -> churnNumNames
+
+### BOXPLOT OF NUMERICAL VALUES VS CHURN
+boxplot_vs_response <- function(x) {
+  ggplot(data = churnNum.df, aes_string(y=x, x="Churn", fill="Churn")) + geom_boxplot() + coord_flip() 
+}
+
+lapply(churnNumNames, boxplot_vs_response)
+
+
+
+```
+
+
+
+Next lets look at a barplots for the categoric variales to get a sense of the different ratio of customers who terminated service for each categorical column's level.
+
+
+```{r}
+
+# split dataframes: categorical
+churnCat.df <- churn.df %>% select(-tenure, -MonthlyCharges, -TotalCharges)
+
+# create a vector of numNames and catNames
+churnCatNames <- names(churnCat.df)
+#remove Churn response
+churnCatNames[-17] -> churnCatNames
+
+
+### BARPLOT OF CATEGORICAL VALUES VS CHURN
+ggplot(data = churnCat.df, aes_string(x="OnlineSecurity", y="Churn", fill="Churn")) + geom_col() 
+
+barplot_vs_response <- function(x) {
+  ggplot(data = churnCat.df, aes_string(x = x, y="Churn", fill = "Churn")) + geom_col() 
+}
+
+lapply(churnCatNames, barplot_vs_response)
+
+```
+
+
+
+
