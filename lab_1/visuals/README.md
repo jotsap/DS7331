@@ -17,5 +17,10 @@ Static screenshots of filtered categorical variables:
 * Online Security
 * Tech Support Utilization
 
+### Boxplots of Numeric Variables vs Churn
+* Boxplot of Churn vs Tenure
+* Boxplot of Churn vs Monthly Charges
+* Boxplot of Churn vs Total Charges
+
   
   
