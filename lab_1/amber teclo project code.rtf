@@ -1,0 +1,163 @@
+{\rtf1\ansi\ansicpg1252\cocoartf1671\cocoasubrtf600
+{\fonttbl\f0\fswiss\fcharset0 Helvetica;}
+{\colortbl;\red255\green255\blue255;}
+{\*\expandedcolortbl;;}
+\margl1440\margr1440\vieww33400\viewh18780\viewkind0
+\pard\tx720\tx1440\tx2160\tx2880\tx3600\tx4320\tx5040\tx5760\tx6480\tx7200\tx7920\tx8640\pardirnatural\partightenfactor0
+
+\f0\fs24 \cf0 \
+#Predict behavior to retain customers. Analyze all relevant customer data and develop focused customer retention programs\
+tele <- read.csv('~/Desktop/telco.csv')\
+\
+#Statistics(range, mode, mean, median, variance, counts, etc.)\
+summary(tele$tenure)\
+summary(tele$MonthlyCharges)\
+summary(tele$TotalCharges)\
+\
+table(tele$gender)\
+table(tele$Contract)\
+table(tele$Churn)\
+table(tele$PhoneService)\
+table(tele$Partner)\
+table(tele$MultipleLines)\
+\
+* To get the mode\
+install.packages("modeest")\
+library(modeest)\
+mfv(tele$tenure)\
+\
+* Cross-tabs\
+\
+table(tele$Churn, tele$Contract)\
+table(tele$Churn, tele$InternetService)\
+\
+table(tele$TechSupport)\
+ggplot(data = tele, aes(x = Churn, fill = TechSupport)) +\
+  geom_bar() +\
+  scale_fill_manual(values = c("green", "yellow", "blue")) +\
+  ggtitle("Loyalty of Customer by TechSupport") +\
+  xlab("Churn") +\
+  ylab("Frequency")\
+\
+table(tele$OnlineSecurity)\
+ggplot(data = tele, aes(x = Churn, fill = OnlineSecurity)) +\
+  geom_bar() +\
+  scale_fill_manual(values = c("green", "yellow", "blue")) +\
+  ggtitle("Loyalty of Customer by OnlineSecurity") +\
+  xlab("Churn") +\
+  ylab("Frequency")\
+\
+\
+* Intereting trend\
+install.packages("ggplot2")\
+library(ggplot2)\
+ggplot(tele, aes_string('TotalCharges','tenure')) + geom_point() + coord_flip()\
+\
+ggplot(tele, aes(TotalCharges, Churn, color=InternetService)) + stat_smooth(method="glm", formula=y~x, alpha=0.2, size=2, aes(fill=InternetService)) + geom_point(position=position_jitter(height=0.01, width=0)) + xlab("TotalCharges") + ylab("Pr(Churn)")\
+\
+\
+ggplot(tele, aes(TotalCharges, Churn, color=Contract)) + stat_smooth(method="glm", formula=y~x, alpha=0.2, size=2, aes(fill=Contract)) + geom_point(position=position_jitter(height=0.01, width=0)) + xlab("TotalCharges") + ylab("Pr(Churn)")\
+\
+ggplot(tele, aes(TotalCharges, tenure, color=Contract)) + stat_smooth(method="lm", formula=y~x, alpha=0.2, size=2, aes(fill=Contract)) + geom_point(position=position_jitter(height=0.01, width=0)) + xlab("TotalCharges") + ylab("Tenure")\
+qplot(tenure, TotalCharges, data = tele, colour = Contract, shape = Contract)\
+\
+* The total charges and loyalty are the same between male and female\
+\
+ggplot(tele, aes(x = TotalCharges, y = tenure, colour = gender)) +  geom_point() +  facet_wrap( ~ gender) + geom_smooth(method="lm")\
+ggplot(tele, aes(x = MonthlyCharges, y = tenure, colour = gender)) +  geom_point() +  facet_wrap( ~ gender) + geom_smooth(method="lm")\
+\
+* examine the relationship between tenure and different variables\
+par(mfrow=c(1,2))\
+\
+boxplot(subset(tele, Churn=0)$tenure, main = "No churn", xlab = "Tenure", ylab = "Quantile", col="orange", border = "brown", horizontal = TRUE, notch =TRUE)\
+boxplot(subset(tele, Churn=1)$tenure, main = "Churn", xlab = "Tenure", ylab = "Quantile", col="orange", border = "brown", horizontal = TRUE, notch =FALSE)\
+\
+\
+\
+* Exploration of relationships between attributes: scatter plots, correlation, cross-tab, group-wise averages\
+ggplot(tele, aes_string('TotalCharges','tenure')) + geom_point() + coord_flip()\
+\
+ggplot(tele, aes(tenure, TotalCharges, color=Churn)) + stat_smooth(method="glm", formula=y~x, alpha=0.2, size=2, aes(fill=Churn)) + geom_point(position=position_jitter(height=0.01, width=0)) + xlab("tenure") + ylab("TotalCharges")\
+\
+\
+ggplot(data = tele, aes(x = Churn, fill = gender)) +\
+  geom_bar() +\
+  scale_fill_manual(values = c("yellow", "blue")) +\
+  ggtitle("Loyalty of Customer by Gender") +\
+  xlab("Churn") +\
+  ylab("Frequency")\
+\
+table(tele$Partner)\
+ggplot(data = tele, aes(x = Churn, fill = Partner)) +\
+  geom_bar() +\
+  scale_fill_manual(values = c("yellow", "blue")) +\
+  ggtitle("Loyalty of Customer by Partner") +\
+  xlab("Churn") +\
+  ylab("Frequency")\
+\
+ggplot(tele, aes(fill=Partner, y=tenure, x=Churn)) + geom_bar(position="dodge", stat="identity")\
+\
+ggplot(tele, aes(fill=Contract, y=StreamingMovies, x=Churn)) + geom_bar(position="dodge", stat="identity")\
+ggplot(tele, aes(fill=Contract, y=InternetService, x=Churn)) + geom_bar(position="dodge", stat="identity")\
+\
+\
+ggplot(data = tele, aes(x = Churn, fill = InternetService)) +\
+  geom_bar() +\
+  scale_fill_manual(values = c("green", "yellow", "blue", "red")) +\
+  ggtitle("Loyalty of Customer by Internet Service") +\
+  xlab("Churn") +\
+  ylab("Frequency")\
+\
+ggplot(data = tele, aes(x = Churn, fill = Contract)) +\
+  geom_bar() +\
+  scale_fill_manual(values = c("navy", "orange", "purple")) +\
+  ggtitle("Loyalty of Customer by Contract") +\
+  xlab("Churn") +\
+  ylab("Frequency")\
+\
+if we want to add another group:\
+  + facet_wrap(~specie)\
+\
+/*\
+  ggplot(data=tele, aes(x=factor(SeniorCitizen), y=tenure, group=Churn, shape=Churn, color=Churn)) + geom_line() + geom_point() + scale_x_discrete("SeniorCitizen") + scale_y_continuous("Tenure") \
+\
+if we want each year under quality (subgroup of another group)\
++ facet_grid(.~quality )\
++ opts(title ="Tenure by Churn and SeniorCitizen")\
+*/\
+  \
+  \
+  * What are we trying to predict? Relationship between target and independent variables\
+glm.fit <- glm(Churn ~ tenure + TotalCharges, data = tele, family = binomial)\
+summary(glm.fit)\
+\
+glm.fit <- glm(Churn ~ gender + SeniorCitizen + Partner + Dependents + tenure + PhoneService + MultipleLines + InternetService + Streaming Movies + Contract + Payment Method + TotalCharges, data = tele, family = binomial)\
+summary(glm.fit)\
+\
+\
+* Additional analyses\
+* Two sample t-test\
+\
+par(mfrow=c(2,2))\
+hist(subset(tele, Churn=="Yes")$tenure, xlab='Tenure for Churn', main='Churn')\
+box()\
+hist(subset(tele, Churn=="No")$tenure, xlab='Tenure for No Churn', main='No Churn')\
+box()\
+qqnorm(subset(tele, Churn=="Yes")$tenure)\
+qqnorm(subset(tele, Churn=="No")$tenure)\
+\
+* Significance of the statistics run and why they are meaningful\
+\
+* summary(subset(edu, female==1)$write)\
+\
+Welch Two Sample t-test\
+t.test(tenure ~ Churn, data=tele, var.equal=F)\
+\
+Two Independent Sample t-test\
+t.test(tenure ~ Churn, data=tele, var.equal=T, alternative='two.sided')\
+\
+par(mfrow=c(1,2))\
+\
+boxplot(subset(tele, Churn=0)$TotalCharges, main = "No churn", xlab = "Total Charges", ylab = "Quantile", col="orange", border = "brown", horizontal = TRUE, notch =TRUE)\
+boxplot(subset(tele, Churn=1)$TotalCharges, main = "Churn", xlab = "Total Charges", ylab = "Quantile", col="orange", border = "brown", horizontal = TRUE, notch =FALSE)\
+}
