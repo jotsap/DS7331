@@ -1,0 +1,1551 @@
+---
+title: "DS7331_Lab-2_Churn_Models"
+author: "Jeremy Otsap, Shawn Jung, Lance Dacy, Amber Burnett"
+date: "2/29/2020"
+output: 
+  html_document:
+    keep_md: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+# load libraries
+
+library(tidyverse) # data wrangling
+library(modelr) # factor manipulation
+library(skimr) # data exploration
+library(ggplot2) #visualization
+library(corrplot) # visualisation
+library(VIM) # missing values
+
+
+#library(rsample)
+#library(vip)
+library(car) # modeling
+library(glmnet) # logistic regression
+library(caret) # CV
+library(ROCR) # model validation
+library(MASS) # model validation
+library(randomForest) # modeling Random Forest
+library(e1071) # modeling Random Forest tuning
+
+```
+
+# SMU Machine Learning 1 DS7331  
+## Lab 2
+  
+**Telco Churn Data Set**  
+https://www.kaggle.com/blastchar/telco-customer-churn  
+  
+
+* Jeremy Otsap - jotsap@mail.smu.edu  
+* Shawn Jung - shawnj@mail.smu.edu  
+* Lance Dacy - ldacy@mail.smu.edu  
+* Amber Burnett - aburnett@mail.smu.edu  
+
+
+### Business Understanding  
+
+We are looking at customer data from a north American Telco provider. The purpose being to retain existing customers. In telecommunications, the estimated cost of new customer acquisition is approximately 5x higher than retaining an existing customer. Furthermore, only a third of customers switch carriers due to lower prices; more and more factors such as dissatisfaction with quality of service, advancing technology and media features, competitors having better cellular coverage, and poorly implemented loyalty programs are all contributing to customer attrition.  
+  
+### Data Understanding  
+  
+**Data Dictionary**  
+We are provided a CSV set of 21 features and 7043 anonymyzed customers.
+
+* **customerID**: Unique alpha-numeric string to anonymously represent an individual customer
+* **gender**: Categorical String value to represent customer's gender (Male or Female)
+* **SeniorCitizen**: Boolean int value to show whether the customer is a senior citizen or not (1, 0)
+* **Partner**: Boolean string value showing whether the customer has a partner or not (Yes, No)
+* **Dependents**: Boolean string value showing whether the customer has dependents or not (Yes, No)
+* **tenure**: Numeric value showing number of months the customer has stayed with the company
+* **PhoneService**: Boolean string value showing whether the customer has a phone service or not (Yes, No)
+* **MultipleLines**: Categorical string value that shows if the customer has multiple lines or not (Yes, No, No phone service)
+* **InternetService**: Categorical string value that shows the customer’s internet service provider (DSL, Fiber optic, No)
+* **OnlineSecurity**: Categorical string value showing whether the customer has online security or not (Yes, No, No internet service)
+* **OnlineBackup**: Categorical string showing whether the customer has online backup or not (Yes, No, No internet service)
+* **DeviceProtection**: Categorical string showing whether the customer has device protection or not (Yes, No, No internet service)
+* **TechSupport**: Categorical string showing whether the customer has tech support or not (Yes, No, No internet service)
+* **StreamingTV**: Categorical string showing whether the customer has streaming TV or not (Yes, No, No internet service)
+* **StreamingMovies**: Categorical string showing whether the customer has streaming movies or not (Yes, No, No internet service)
+* **Contract**: Categorical string that represents the contract term (Month-to-month, One year, Two year)
+* **PaperlessBilling**: Boolean string showing whether the customer has paperless billing or not (Yes, No)
+* **PaymentMethod**: Categorical string that shows the customer’s payment method (Electronic check, Mailed check, Bank transfer (automatic), Credit card (automatic))
+* **MonthlyCharges**: Numeric value showing the amount charged to the customer each month
+* **TotalCharges**: Numeric value showing the total amount charged to the customer
+* **Churn**: Boolean string showing whether or not the customer 'churned' or terminated ser
+vices (Yes or No)  
+
+
+### Initial Data Examination
+
+As we can see most of the predictor variables are categorical, as is the response "Churn." However there are a few numerical variables as well specifically relating to the customer's spend, as well as the length of their contract.
+
+
+```{r}
+
+# dataframe
+churn.df <- read.csv('https://raw.githubusercontent.com/jotsap/DS7331/master/data/churn.csv')
+
+str(churn.df)
+head(churn.df)
+
+```
+
+
+CustomerID is simply a placeholder value to represent an anonomyzed customer and is not necessary for analysis. Thus we will remove it. Additionally R can convert a data type to factor, thus we will convert the numerical SeniorCitizen variable to a factor and store it as a separate column
+
+
+```{r}
+
+# CustomerID not necessary for analysis
+churn.df %>% dplyr::select(-customerID)  -> churn.df
+# alternate code: churn.df$customerID <- NULL
+
+
+# make FACTOR flavor of SeniorCitizen column
+# recode 1 as "Yes" and 0 as "No"
+dplyr::recode_factor(
+  churn.df$SeniorCitizen, 
+  `1` = "Yes", `0` = "No"
+  ) -> churn.df$SeniorCitizen
+# alternate code: churn.df <- churn.df %>% mutate(SeniorCitizen = factor(SeniorCitizen))
+
+glimpse(churn.df)
+
+```
+
+
+Now lets get a better look at our data using the skim() command. We can see a breakdown of variables by their types, as well as the ratio of counts for categorical variables, or range of values for numeric. 
+
+One thing we notice immediately is there are 11 missing values in the TotalCharges parameter. *Note: we will address this shortly; however being such a small number it should not significantly impact our initial exploration*
+
+A few things become immediately apparent as well. Firstly this sample has roughly a one third attrition rate looking at the Churn column: 1869 Yes vs 5174 No.
+
+The output for SeniorCitizen is more useful now as a factor rather than the numeric representation, and because we did this it allows us to see that there are almost 6 times as many non-senior adults as seniors: 5901 vs 1142. However, when we look at gender we see a fairly even representation: 3555 males vs 3488 females. 
+
+So we are starting to get a sense of the customer sample being a fairly even collection of males and females, however most of them are likely *not* retired and still working professionally. However, to get better insight we will now create some visualizations of our data
+
+
+```{r}
+skim(churn.df)
+
+# Churn ratio
+table(churn.df$Churn) %>% pie(., main = "Churn Comparison")
+
+# Gender ratio
+table(churn.df$gender) %>% pie(., main = "Gender Comparison")
+
+# Senior ratio
+table(churn.df$SeniorCitizen) %>% pie(., , main = "SeniorCitizen")
+
+```
+
+
+## Missing Values
+
+As we investigate the data set we need to check for missing values. We validate there are 11 missing values in the TotalCharges column
+
+
+```{r}
+# from VIM package
+aggr(churn.df, 
+     prop = FALSE, 
+     combined = TRUE, 
+     numbers = TRUE, 
+     sortVars = TRUE, 
+     sortCombs = TRUE)
+
+# we can see that 'TotalCharges' has 11 missing values
+
+# VALIDATE COUNT OF NA VALUES FOR ABOVE ROWS
+print("Total number of missing values for TotalCharges: ")
+sum(is.na(churn.df$TotalCharges))
+
+```
+
+
+Lets examine those specific rows that have missing values. We notice right away they all have a 0 for the tenure field. Lets validate we get the same 11 rows on the 2 following queries. 
+
+NOTE: for readability we will only output the following 3 columns
+* TotalCharges
+* tenure
+* MonthlyCharges
+
+**All rows that have missing values in TotalCharges**
+
+```{r}
+
+# list rows with missing values
+churn.df[is.na(churn.df$TotalCharges), c('TotalCharges','tenure','MonthlyCharges')]
+
+
+```
+
+
+
+**All rows that have a 0 in tenure**
+
+```{r}
+
+# list rows with tenure of 0
+churn.df[churn.df$tenure == 0, c('TotalCharges','tenure','MonthlyCharges')]
+
+
+```
+
+
+We can see these are the **same** 11 rows. Thus these are likely new customers that just started their contract. Thus for this exercise it makes sense to use the value from **MonthlyCharges** as a placeholder for **TotalCharges**
+
+
+```{r}
+
+churn.df$TotalCharges[churn.df$tenure == 0] <- churn.df$MonthlyCharges[churn.df$tenure == 0]
+
+```
+
+
+Let's quickly verify no missing vlaues remain
+
+
+```{r}
+aggr(churn.df, 
+     prop = FALSE, 
+     combined = TRUE, 
+     numbers = TRUE, 
+     sortVars = TRUE, 
+     sortCombs = TRUE)
+
+```
+
+
+
+# MODELING CHURN
+
+
+## Logistic Regression: Full Model
+
+
+First we need to split the data into a train and test set, with 80% of the data going into the train set. Note that createDataPartition() automatically accounts for the unbalanced levels of y [in this case 'Churn'] in an attempt to balance the class distributions within the splits
+
+```{r}
+
+# creating the 80 data partition 
+churn_split <- createDataPartition(churn.df$Churn, p = 0.8, list = F)
+# including 80 for training set
+churn_train.df <- churn.df[churn_split,] 
+# excluding 80 for testing set
+churn_test.df <- churn.df[-churn_split,]
+
+# validating
+head(churn_test.df)
+head(churn_train.df)
+
+```
+
+
+
+Lets create our initial Logistic Regression model using all the values. The AIC on the model is 4691.3. 
+
+Note that R automatically processes the 1-bit encoding on factor variables. However our model has some issues due to the fact that there is a high amount of correlation. For example if a customer has no Internet service, they will always have no for ancillary services like Online Security or Online Backup. 
+
+Despite this we see some parameters appear to be more *significant* to the model looking at the p-values for the following:
+
+* SeniorCitizen
+* tenure
+* MultipleLines
+* InternetService
+* Contract
+* PaperlessBilling
+* PaymentMethod
+* TotalCharges
+
+
+
+```{r}
+
+# create logistic regression model on train data
+# R will automatically create dummy variables on factors
+churn_train.logit <- glm(Churn ~ ., data = churn_train.df, family = binomial("logit") )
+summary(churn_train.logit)
+
+```
+
+
+### Visualize the coefficients of the Full Logistic Model
+
+Visualizing the coefficients, we can see the most *influential* factors are the type of Internet Service and the type of contract, which were included in significant factors above
+
+```{r}
+
+
+# visualize coefficients
+as.data.frame(churn_train.logit$coefficients) %>% ggplot(aes(y = .[,1], x = rownames(.)) ) + geom_col() + theme( axis.text = element_text(angle = 90, size = rel(0.7)) )
+
+# standard graphics alternative
+# barplot( churn_train.logit$coefficients, names.arg = F, col = rainbow(31), legend.text = names(churn_train.logit$coefficient) )
+
+```
+
+
+
+### ROC Curve for Full Logistic Model
+
+So now lets validate the accuracy of our model on the test data set. First lets take a look at a ROC curve for the model. The AUC is 83.79 
+
+
+```{r}
+
+# create predictions
+predict(
+  churn_train.logit, 
+  newdata = churn_test.df,
+  type = "response"
+  ) -> churn_test.pred
+
+
+#prediction(churn_test.pred, churn_test.df$Churn)
+
+performance(
+  prediction(churn_test.pred, churn_test.df$Churn),
+  measure = "tpr",
+  x.measure = "fpr"
+) -> churn_logit.perf 
+
+plot(churn_logit.perf)
+
+# AUC value
+print("AUC Value for this model is ")
+
+performance(
+  prediction(churn_test.pred, churn_test.df$Churn),
+  measure = "auc"
+)@y.values[[1]]
+
+
+
+```
+
+Looking at Accuracy, we can see we have an accurancy of approximately 79.25%
+
+Essentially this means that when comparing the number of times the model predicts an accurate result, either "Yes" or "No" in comparison to the actual values, it is just under 80% accurate
+
+
+```{r}
+
+# split into "Yes" and "No" based on 0.5 threadshold
+as.numeric(churn_test.pred > 0.5 ) -> churn_test.pred
+
+dplyr::recode_factor(
+  churn_test.pred, 
+  `1` = "Yes", `0` = "No"
+  ) -> churn_test.pred
+
+
+mean(churn_test.pred == churn_test.df$Churn )
+
+```
+
+
+### Confusion Matrix: Full Logistic Model
+
+Lets setup a confusion matrix to also see the sensitivity and specificity of the model. 
+
+Our specificity, essentially predicting negative outcomes, is fairly good at 88.3%.
+
+However the sensitivity, predicting positive outcomes, is actually quite low at just under 54.16%
+
+What this means is our **Full Logistic Model** is better at determining loyal customers, or when a customer **won't** leave.
+
+
+```{r}
+
+caret::confusionMatrix(
+  data = relevel(churn_test.pred, ref = "Yes"),
+  reference = relevel(churn_test.df$Churn, ref = "Yes")
+)
+
+
+
+```
+
+
+### Adjusting Model
+
+Tweaking the split away from 50% [or 0.5], we can try other values that more accurately reflect the disproritionate sample of customer churn, and then see if this will improve the model sensitivity.
+
+We can see how uneven the samples between "No" vs "Yes" customers is, thus we skew our prediciton boundary to account for this
+
+```{r}
+
+# compare "yes" vs "no"
+table(churn.df$Churn)
+plot(churn.df$Churn)
+
+```
+
+**Model using a 30% threshold instead of 50%**
+
+Accuracy goes down a little to 74.41%
+
+```{r}
+
+# create predictions
+predict(
+  churn_train.logit, 
+  newdata = churn_test.df,
+  type = "response"
+  ) -> churn_test.pred
+
+# split into "Yes" and "No" based on 0.3 threshold
+as.numeric(churn_test.pred > 0.3 ) -> churn_test.pred
+
+dplyr::recode_factor(
+  churn_test.pred, 
+  `1` = "Yes", `0` = "No"
+  ) -> churn_test.pred
+
+mean(churn_test.pred == churn_test.df$Churn )
+
+```
+
+
+**Confusion Matrix for 30% Prediction Boundary**
+
+Our specificity has gone down to 73.21%, however the sensitivity is almost at 77.75%, giving a more balanced model.
+
+**Why is this important?**
+Using Cancer as an example, the value of a False Postitive is *not* the same as a False Negative. To clarify: mistakenly telling someone they have Cancer when they are in fact Healthy is bad, but the reverse, telling someone they are Healthy when they in fact have Cancer is much more severe.
+
+Thus **Sensitivity** addresses this: how often to you identify Cancer or customer's Churning, when they ACTUALLY are Cancer or Churning
+
+
+```{r}
+
+caret::confusionMatrix(
+  data = relevel(churn_test.pred, ref = "Yes"),
+  reference = relevel(churn_test.df$Churn, ref = "Yes")
+)
+
+# TO LOOP THROUGH CONFUSION MATRIX OBJECT
+# SENSITIVITY = test.churn.conf$byClass[1]
+# ACCURACY = test.churn.conf$overall[1]
+# SPECIFICITY = test.churn.conf$byClass[2]
+# F1 [Recall vs Precision} test.churn.conf$byClass[7]
+
+
+```
+
+
+## Model Challenges: Variable Correlation and Overfitting
+
+As mentioned earlier we have some issues with this model. Due to the fact that we are predominantly dealing with categorical predictors, it's not as obvious to identify potential correlation between them; as compared to continuous variables that allow us to simply calculate the Variance Inflation Factor [VIF].
+
+The message *Coefficients: (7 not defined because of singularities)* alludes to model features whose effect on the output is not discernable from other features due to inter-dependencies. As per above, any customer with "no" for the InternetService predictor is also going to have "no" for ancillary services like OnlineSecurity and OnlineBackup, as well as StreamingTV or StreamingMovies.
+
+The **alias()** command [output omitted due to size] validates this.
+
+Additionally with 20+ predictors we run the risk of overfitting, where our model performs well on the training data set used to construct the model, but then performs poorly on new customers we wish to accurately predict their attrition likelihood.
+
+For this there are a variety of techniques to simplify the model, leaving only the most influential predictors. We will explore these further
+
+* Feature Selection
+* Regularized or Shrinkage
+* Manually Adjusted
+
+
+## Feature Selection: Stepwise Regression
+
+Now let's employ **Feature Selection**, where R iteratively goes through the model adding / removing a predictors based on the calculated significance to the model's overall performance. There are different metrics which can be used to evaluate this performance; here we find optimal coefficients by using the respective AIC score. 
+
+So far this is the lowest AIC score at 4683.7, compared to the **Full** model's AIC of 4691.3. However we still have some interdependencies among the predictors.
+
+Let's investigate further
+
+
+### Visualizing Coefficients on Stepwise Model
+
+The list of significant factors that the AIC-based Stepwise Regression recommends are:
+
+* SeniorCitizen
+* tenure
+* MultipleLines
+* InternetService
+* OnlineSecurity
+* TechSupport
+* StreamingMovies
+* Contract
+* PaperlessBilling
+* TotalCharges
+
+
+```{r}
+
+stepAIC(
+  churn_train.logit,
+  trace = F,
+  direction = "both"
+) -> churn_step.logit
+
+
+# view results
+summary(churn_step.logit)
+
+```
+
+As far as the strongest coefficients, the AIC Step Model found the following to be the most influential:
+
+* Contract
+* InternetService
+* MultipleLines
+
+
+```{r}
+
+# visualize coefficients
+as.data.frame(churn_step.logit$coefficients) %>% ggplot(aes(y = .[,1], x = rownames(.)) ) + geom_col() + theme( axis.text = element_text(angle = 90, size = rel(0.7)) )
+
+
+```
+
+
+### ROC Curve on AIC-based Stepwise
+
+Evaluating the accuracy of our model on the test data set by visualizing through a ROC curve of the model's performance. Looks fairly close to the ROC of the Full Logistic Model. The AUC is 83.63% compared to the Full's 83.79%
+
+```{r}
+
+# create predictions
+predict(
+  churn_step.logit, 
+  newdata = churn_test.df,
+  type = "response"
+  ) -> churn_step.pred
+
+#prediction(churn_step.pred, churn_test.df$Churn)
+
+performance(
+  prediction(churn_step.pred, churn_test.df$Churn),
+  measure = "tpr",
+  x.measure = "fpr"
+) -> churn_step.perf 
+
+plot(churn_step.perf)
+
+# AUC value
+print("AUC Value for this model is ")
+
+performance(
+  prediction(churn_step.pred, churn_test.df$Churn),
+  measure = "auc"
+)@y.values[[1]]
+
+
+```
+
+**Accuracy doing a 50 / 50 Prediction Boundary**
+
+Essentially comparing the number of times the model predicts an accurate result, either "Yes" or "No" in comparison to the actual values
+
+We have an accurancy of 78.96%
+
+
+```{r}
+# split into "Yes" and "No" based on 0.5 threadshold
+as.numeric(churn_step.pred > 0.5 ) -> churn_step.pred
+
+dplyr::recode_factor(
+  churn_step.pred, 
+  `1` = "Yes", `0` = "No"
+  ) -> churn_step.pred
+
+
+mean(churn_step.pred == churn_test.df$Churn )
+
+
+```
+
+
+Lets setup a confusion matrix to also see the sensitivity and specificity of the model. 
+
+Our specificity, essentially predicting negative outcomes, is around 88%. And the sensitivity, predicting positive outcomes, is slightly lower now at 53.6%
+
+Thus our model is *still* better at determining loyal customers, or when a customer **won't** leave.
+
+
+```{r}
+
+caret::confusionMatrix(
+  data = relevel(churn_step.pred, ref = "Yes"),
+  reference = relevel(churn_test.df$Churn, ref = "Yes")
+)
+
+
+```
+
+
+
+**Accuracy doing a 70 / 30 Prediction Boundary**
+
+Again accounting for the unbalanced levels of "Yes" vs "No" churn we can adjust the prediction boundary to more accurately reflect this
+
+We now have a lower accurancy of 74.2%
+
+
+```{r}
+
+# create predictions
+predict(
+  churn_step.logit, 
+  newdata = churn_test.df,
+  type = "response"
+  ) -> churn_step.pred
+
+
+# split into "Yes" and "No" based on 0.3 threadshold
+as.numeric(churn_step.pred > 0.3 ) -> churn_step.pred
+
+dplyr::recode_factor(
+  churn_step.pred, 
+  `1` = "Yes", `0` = "No"
+  ) -> churn_step.pred
+
+mean(churn_step.pred == churn_test.df$Churn )
+
+
+```
+
+
+Lets setup a confusion matrix to also see the sensitivity and specificity of the model. 
+
+Our specificity, essentially predicting negative outcomes, is now around 73.1%. And the sensitivity, predicting positive outcomes, is improved dramatically to 77.21%
+
+
+```{r}
+
+caret::confusionMatrix(
+  data = relevel(churn_step.pred, ref = "Yes"),
+  reference = relevel(churn_test.df$Churn, ref = "Yes")
+)
+
+```
+
+
+
+## Regularization: Lasso & Ridge Penalized Regression
+
+Unlike Feature Selection in the prior section, which adds / removes predictors, now we are looking at **Regularization** techniques. Rather than removing predictors they instead introduce a constraint in the training process that shrinks the estimated coefficients. We will be exploring 2 such methods
+
+**Ridge Regression** introduces bias in order to reduce the model's variance, and tries to minimize the sum of the Residual Sum-of-Squares [RSS]. It shrinks variables to be *approximately* zero.
+
+**Lasso Regression** is similar to Ridge, however it instad involves the minimizing the sum of the absolute values of the coefficients, pushing the least significant ones closer to zero. Unlike Ridge, the Lasso Penalty will actually push them all the way to zero.
+
+Both of these rely on a constant **lambda** which acts as a tuning parameter which effects the size of the penalty, thus shrinking the coefficients's closer to zero. For the purposes of this exercise we rely on the **cv.glmnet()** function to iteratively find the optimal value for each model
+
+
+
+```{r}
+# NOTE: requires data as matrix
+
+# create dummy variables
+model.matrix(Churn ~ ., data = churn_train.df) -> churn_train.mtx
+# remove intercept
+churn_train.mtx[, -1] -> churn_train.mtx
+
+
+```
+
+
+First we need to prepare the data as a separate matrix of predictors, and the response as a vector, in order to leverage the cv.glmnet() function. Note that the glmnet() function can do either Lasso *or* Ridge Regularized Regression, simply by specifying **alpha = 1** or **alpha = 0** respectively
+
+In both cases we first run the **cv.glmnet()** function to find the optimal value of lambda, then output as an S3 object which we plug that value into the actual Regularized Regression model. 
+
+
+**Lasso Regression**
+
+```{r}
+
+# Find optimal value of lambda
+cv.glmnet(
+  churn_train.mtx, churn_train.df$Churn,
+  family = "binomial",
+  alpha = 1
+) -> lambda.lasso
+
+# glm model: LASSO
+glmnet(
+  churn_train.mtx, churn_train.df$Churn, 
+  family="binomial", 
+  alpha = 1,
+  lambda = lambda.lasso$lambda.min
+  ) -> churn_train.lasso
+
+# output coefficients
+coef(lambda.lasso, lambda.lasso$lambda.min)
+
+# NOTE: lambda.lasso$lambda.1se outputs simplest model
+
+```
+
+
+
+### Plot of Lasso Model Lambda
+
+CV Mean Squared Error [MSE] for Lasso model. The first dotted line represents lambda with the smallest MSE and the second represents with an MSE within 1 standard-error of the minimum MSE [which typically outputs a *simpler* model. ]
+
+```{r}
+
+plot(lambda.lasso)
+
+```
+
+
+
+**Ridge Regression**
+
+```{r}
+
+# Find optimal value of lambda
+cv.glmnet(
+  churn_train.mtx, churn_train.df$Churn,
+  family = "binomial",
+  alpha = 0
+) -> lambda.ridge
+
+# glm model: RIDGE
+glmnet(
+  churn_train.mtx, churn_train.df$Churn, 
+  family="binomial", 
+  alpha = 0,
+  lambda = lambda.ridge$lambda.min
+  ) -> churn_train.ridge
+
+# output coefficients of lowest lambda
+coef(
+  lambda.ridge,
+  lambda.ridge$lambda.min
+)
+
+# NOTE: lambda.ridge$lambda.1se outputs simplest model
+
+
+```
+
+
+### Plot of Ridge Model Lambda
+
+CV Mean Squared Error [MSE] for Ridge model. The first dotted line represents lambda with the smallest MSE and the second represents with an MSE within 1 standard-error of the minimum MSE [again the 1 SE outputs the *simpler* model.]
+
+```{r}
+
+plot(lambda.ridge)
+
+```
+
+
+
+### Lasso model with optimized Lambda
+
+**ROC curve**
+
+Evaluating the accuracy of the Lasso Penalized Logistic model on the test data set by visualizing through a ROC curve of the model's performance. The AUC is 83.79%
+
+Looks fairly close to the ROC of the Full Logistic Model.
+
+```{r}
+
+# make test data into matrix
+# create dummy variables
+model.matrix(Churn ~ ., data = churn_test.df) -> churn_test.mtx
+# remove intercept
+churn_test.mtx[, -1] -> churn_test.mtx
+
+# validate prediction accuracy on test data set
+
+predict(
+  churn_train.lasso,
+  s = lambda.lasso$lambda.min,
+  newx = churn_test.mtx,
+  type = "response"
+) -> churn_test_lasso.pred
+
+
+# validate range is between 0 and 1
+range(churn_test_lasso.pred)
+
+
+performance(
+  prediction(churn_test_lasso.pred, churn_test.df$Churn),
+  measure = "tpr",
+  x.measure = "fpr"
+) -> churn_lasso.perf 
+
+plot(churn_lasso.perf)
+
+# AUC value
+print("AUC Value for this model is ")
+
+performance(
+  prediction(churn_test_lasso.pred, churn_test.df$Churn),
+  measure = "auc"
+)@y.values[[1]]
+
+```
+
+
+### Confusion Matrix for Lasso Model
+
+Essentially comparing the number of times the model predicts an accurate result, either "Yes" or "No" in comparison to the actual values
+
+We can see we have a slightly lower accurancy of approximately 78.96%
+
+```{r}
+
+
+# preparing data for confusion matrix
+
+as.numeric(churn_test_lasso.pred > 0.5) -> churn_test_lasso.pred
+
+dplyr::recode_factor(
+  churn_test_lasso.pred, 
+  `1` = "Yes", `0` = "No"
+) -> churn_test_lasso.pred
+
+# Accuracy
+mean(churn_test_lasso.pred == churn_test.df$Churn)
+
+
+```
+
+
+
+**Confusion Matrix**
+
+Our specificity, essentially predicting negative outcomes, is 88%. And the sensitivity, predicting positive outcomes, is at 53.6%
+
+What this means is our model is better at determining loyal customers, or when a customer **won't** leave.
+
+```{r}
+
+# confusion matrix
+caret::confusionMatrix(
+  data = relevel(churn_test_lasso.pred, ref = "Yes"),
+  reference = relevel(churn_test.df$Churn, ref = "Yes")
+)
+
+```
+
+
+## Logistic Regression: Manually Optimized Model
+
+Lookinga cross the results of all our models, the categories that were found to be significant across all of them are:
+
+* tenure
+* Contract
+* PaperlessBilling
+* TotalCharges
+* SeniorCitizen
+* MultipleLines
+* InternetService
+
+
+We will now create a model just using these predictors in an attempt to avoid a model that overfits our data. 
+
+The AIC score on the manual model is 4765.9 vs the full model 4643.3, and using the Stepwise method for feature engineering of 4683.7.
+
+Here, EVERY parameter is show to be statistically significant, given by their p-values.
+
+
+```{r}
+
+# logistic regression model on manually specified variables
+churn_manual.logit <- glm(
+  Churn ~ tenure + Contract + PaperlessBilling + TotalCharges + SeniorCitizen + MultipleLines + InternetService, 
+  data = churn_train.df, 
+  family = binomial("logit") 
+  )
+
+# view results
+summary(churn_manual.logit)
+
+
+```
+
+
+### Visualizing Coefficients on Manual Model
+
+From this model it estimates the most influential feature to predicting customer churn would be those with a 2-year contract, followed by the type of Internet Service.
+
+
+```{r}
+
+# visualize coefficients
+as.data.frame(churn_manual.logit$coefficients) %>% ggplot(aes(y = .[,1], x = rownames(.)) ) + geom_col() + theme( axis.text = element_text(angle = 90, size = rel(0.9)) )
+
+
+```
+
+
+### ROC Curve on Manual Model
+
+So now lets validate the AUC of our model on the test data set and take a look at a ROC curve.
+
+The AUC for the *Manual* model is 83.9% which is slightly better than the *Full* model's score of 83.79%
+
+
+
+```{r}
+
+# create predictions
+predict(
+  churn_manual.logit, 
+  newdata = churn_test.df,
+  type = "response"
+  ) -> churn_manual.pred
+
+#prediction(churn_manual.pred, churn_test.df$Churn)
+
+performance(
+  prediction(churn_manual.pred, churn_test.df$Churn),
+  measure = "tpr",
+  x.measure = "fpr"
+) -> churn_manual.perf 
+
+plot(churn_manual.perf)
+
+# AUC value
+print("AUC Value for this model is ")
+
+performance(
+  prediction(churn_manual.pred, churn_test.df$Churn),
+  measure = "auc"
+)@y.values[[1]]
+
+
+```
+
+
+We can see we have a an accurancy of approximately 79.74%
+
+
+
+```{r}
+
+# split into "Yes" and "No" based on 0.5 threadshold
+as.numeric(churn_manual.pred > 0.5 ) -> churn_manual.pred
+
+dplyr::recode_factor(
+  churn_manual.pred, 
+  `1` = "Yes", `0` = "No"
+  ) -> churn_manual.pred
+
+
+mean(churn_manual.pred == churn_test.df$Churn )
+
+
+```
+
+
+Lets setup a confusion matrix to also see the sensitivity and specificity of the model. 
+
+Our specificity, essentially predicting negative outcomes, is 87.9%. And the sensitivity, predicting positive outcomes, is at 57.1%
+
+What this means is our model is better at determining loyal customers, or when a customer **won't** leave.
+
+
+```{r}
+
+caret::confusionMatrix(
+  data = relevel(churn_manual.pred, ref = "Yes"),
+  reference = relevel(churn_test.df$Churn, ref = "Yes")
+)
+
+
+```
+
+
+
+
+**Model using a 30% threshold instead of 50%**
+
+Accuracy goes down a little to 72.9%
+
+```{r}
+
+# create predictions
+predict(
+  churn_manual.logit, 
+  newdata = churn_test.df,
+  type = "response"
+  ) -> churn_manual.pred
+
+# split into "Yes" and "No" based on 0.3 threshold
+as.numeric(churn_manual.pred > 0.3 ) -> churn_manual.pred
+
+dplyr::recode_factor(
+  churn_manual.pred, 
+  `1` = "Yes", `0` = "No"
+  ) -> churn_manual.pred
+
+mean(churn_manual.pred == churn_test.df$Churn )
+
+```
+
+
+**Confusion Matrix for 30% Prediction Boundary**
+
+Our specificity has gone down to just under 71%, however the sensitivity is now over 78%, giving model that can more accurantely predict customer churn.
+
+Thus the **Manual** Logistic model gives us the best sensitivity score so far at 78%. Compared to the **Full** Logistic model's sensitivity of 77.75% and the **AIC-Stepwise** Logistic model's sensitivity 77.21%
+
+
+```{r}
+
+caret::confusionMatrix(
+  data = relevel(churn_manual.pred, ref = "Yes"),
+  reference = relevel(churn_test.df$Churn, ref = "Yes")
+)
+
+```
+
+
+
+
+
+
+
+
+
+## Random Forest
+
+
+Now we'll try a different type of modeling based on ensemble models of decision trees called Random Forest, combined with 10-fold cross validation.
+
+The Random Forest means multiple trees will be built, all split in a variety of different ways, and randomly including different predictors, and then based on the majority rules, the "best" tree will be picked.
+
+The 10 fold cross-validation means we take the **training** data, split it up into 10 equal portions, *train* the Random Forest on 9 of the 10, and *validate* on the remaining 1 of 10. It will iterate through all 10 possible combinations, where each of the 10 sections is ommitted in a training iteration
+
+The combinanation of these techniques is an "ensemble" or aggregate results of many models
+
+Initially we'll run the Random Forest with mostly default settings. We can see the default created 500 trees and 2 variables considered as split points per tree
+
+NOTE: as per the Logistic Regression, we anticipate challenges due to the UNBALANCED "Yes" vs "No" levels
+
+
+```{r}
+
+# training RF model
+
+train(
+  Churn ~ .,
+  data = churn_train.df,
+  method = "rf",
+  trControl = trainControl("cv", number = 10),
+  importance = T,
+  metric = "Accuracy"
+) -> churn_train.rf
+
+# best tuning parameter
+churn_train.rf$bestTune
+
+#final model
+churn_train.rf$finalModel
+
+
+```
+
+
+### Evaluating model with test predictions
+
+The OB estimate of error rate of 20.87% is calculated using observations not in the "bag" with respect to bagging / boosting sample selection. I.e. the training set *not* used for building the decision tree. Thus this implies when this model is applied to NEW data, the answers will be in error around 21% of the time.
+
+
+```{r}
+
+# predictions
+
+predict(
+  churn_train.rf,
+  newdata = churn_test.df,
+  ) -> churn_forest.pred
+
+```
+
+**AUC and RMSE**
+
+The initial model's AUC is pretty terrible at 65.46% and the RMSE is 45.3% This is likely due to a few factors, including lack of hyperparameter tuning, and especially the unbalanced "yes" vs "no" levels
+
+
+```{r}
+
+# AUC plot
+# NOTE: must convert values to numeric to use function
+performance(
+  prediction( as.numeric(churn_forest.pred), as.numeric(churn_test.df$Churn) ),
+  measure = "tpr",
+  x.measure = "fpr"
+) -> churn_forest.perf 
+
+plot(churn_forest.perf)
+
+# AUC value
+print("AUC Value for this model is ")
+
+performance(
+  prediction( as.numeric(churn_forest.pred), as.numeric(churn_test.df$Churn) ),
+  measure = "auc",
+  )@y.values[[1]] 
+
+# RMSE
+print("RMSE Value for this model is ")
+RMSE( as.numeric(churn_forest.pred), as.numeric(churn_test.df$Churn) )
+
+```
+
+**Confusion Matrix**
+
+As per the logistic regression, the Accuracy is just under 80%, and the Specificity is 95.26%, while Sensitivity performs fairly poorly at 35.66%
+
+
+```{r}
+
+# confusion matrix
+
+caret::confusionMatrix(
+  data = relevel(churn_forest.pred, ref = "Yes"),
+  reference = relevel(churn_test.df$Churn, ref = "Yes")
+)
+
+
+```
+
+
+**Variable Importance & Impurity**
+
+Looking at the variable-importance plot tells us how important that variable is in classifying the data. We can see that when looking at both mean decrease in accuracy, as well as node purity [i.e. Gini], tenure is the most important variable. Thus we will consider this later for our secondary analysis. 
+
+
+
+Looking at both mean decrease in accuracy, as well as node impurity, we can see after tenure and TotalCharges there is a sharp drop before the next group of predictors. 
+
+Essentially this shows that cost of service, as well as the length of time with their current provider, appear to contribute the homogeneity of the nodes and branches of the resulting random forest. Essentially implying that customers' behavior with regard to churn is most similar based on these attributes
+
+Based on the Gini score, these are the top contributors of node purity:
+
+* tenure
+* TotalCharges
+* MonthlyCharges
+* InternetService
+* PaymentMethod
+* Contract
+* TechSupport
+
+Note that 2 of the top 5 parameters are moderately correlated: MonthlyCharges and TotalCharges.
+
+```{r}
+
+# Mean Decrease In Accuracy
+varImpPlot(churn_train.rf$finalModel, type = 1, main = "Mean Decrease In Accuracy")
+
+# Mean Decrease In Gini / Node Impurity
+varImpPlot(churn_train.rf$finalModel, type = 2, main = "Mean Decrease In Gini")
+
+# list importance
+importance(churn_train.rf$finalModel)
+
+```
+
+
+
+
+## Random Forest: Manual Parameter Selection
+
+Based on the above we can focus the tree selection to the specific variables that are found to be more important:
+
+* tenure
+* TotalCharges
+* MonthlyCharges
+* InternetService
+* PaymentMethod
+* Contract
+* TechSupport
+
+
+```{r}
+
+# training RF model
+
+train(
+  Churn ~ tenure + TotalCharges + MonthlyCharges + Contract + InternetService + PaymentMethod + TechSupport,
+  data = churn_train.df,
+  method = "rf",
+  trControl = trainControl("cv", number = 10),
+  importance = T,
+  metric = "Accuracy"
+) -> churn_forest_manual.rf
+
+# best tuning parameter
+churn_forest_manual.rf$bestTune
+
+#final model
+churn_forest_manual.rf$finalModel
+
+
+```
+
+
+
+
+
+### Evaluating model with test predictions
+
+The OB estimate of error rate of 20.79% is slightly lower than the original 20.87% 
+
+
+```{r}
+
+# predictions
+
+predict(
+  churn_forest_manual.rf,
+  newdata = churn_test.df,
+  ) -> churn_forest_manual.pred
+
+```
+
+**AUC and RMSE**
+
+The initial model's AUC is increased slightly to 69.9%, slightly better than the prior 65.46% and the RMSE is barely moved up to 45.39% 
+
+
+```{r}
+
+# AUC plot
+# NOTE: must convert values to numeric to use function
+performance(
+  prediction( as.numeric(churn_forest_manual.pred), as.numeric(churn_test.df$Churn) ),
+  measure = "tpr",
+  x.measure = "fpr"
+) -> churn_forest_manual.perf 
+
+plot(churn_forest_manual.perf)
+
+# AUC value
+print("AUC Value for this model is ")
+
+performance(
+  prediction( as.numeric(churn_forest_manual.pred), as.numeric(churn_test.df$Churn) ),
+  measure = "auc",
+  )@y.values[[1]] 
+
+# RMSE
+print("RMSE Value for this model is ")
+RMSE( as.numeric(churn_forest_manual.pred), as.numeric(churn_test.df$Churn) )
+
+```
+
+
+**Confusion Matrix**
+
+As per the logistic regression, the Accuracy is still just under 80%, and the Specificity actually went down to 90.14% from 95.26%, while Sensitivity has had a significant boost to 49.6%, up from 35.66%
+
+Thus the simpler model with the more "important" variables is better at predicting churn with customers who actually churn. However, overall at 49.6% there is still room for improvement
+
+
+```{r}
+
+# confusion matrix
+
+caret::confusionMatrix(
+  data = relevel(churn_forest_manual.pred, ref = "Yes"),
+  reference = relevel(churn_test.df$Churn, ref = "Yes")
+)
+
+
+```
+
+
+
+
+
+
+
+
+
+## Random Forest: Hyperparameter Tuning
+
+There are a number of hyperparameters that can be optimized to improve model performance: 
+
+* How many trees should be generated? **ntree** parameter
+* How many random variables should be included in each tree? **mtry** parameter
+* What is minimum depth of each tree before a split can occur? **nodesize** parameter
+
+
+From the initial model we can see that the forest contained 500 trees [default value] and the number of randomly selected predictors was 2 [default is the square root of total number of predictors], with a default minimum nodesize of 1 for classification trees. [*The default for regression trees is 5*]
+
+https://www.rdocumentation.org/packages/randomForest/versions/4.6-14/topics/randomForest
+
+
+```{r}
+
+#final model
+churn_train.rf$finalModel
+
+
+```
+
+
+###Hyperparameter Tuning: **Nodesize**
+
+Setting up a loop we can test out a few different nodesizes. Generally speaking you do not want these to be too large as you may have a subobtimal split. On the other hand over splitting can also create an overfit model. Here we loop through values of 1, 2, 3, and 5
+
+Additionally for optimizing tuning parameters, we can use random selection vs the default grid searching. The scope of this is beyond this exercise, but essentially with a large number of hyperparameters, random may be a better option. More info can be read on the Caret package here:
+
+https://topepo.github.io/caret/random-hyperparameter-search.html
+
+
+We essentially loop through each iteration and output to a list, then compare the **Accuracy** of each one.
+
+Note that we are using the limited set of predictors from the prior step
+
+We can see a node size of 3 has the best median accuracy of 79.93%
+
+
+```{r}
+
+# create empty list to store all models
+churn_forests <- list()
+
+# iterate through different nodesizes
+
+for (nodesize in c(1,2,3,5) ) {
+train(
+  Churn ~ tenure + TotalCharges + MonthlyCharges + Contract + InternetService + PaymentMethod + TechSupport,
+  data = churn_train.df,
+  method = "rf",
+  trControl = trainControl("cv", number = 10, search = "random"),
+  importance = T,
+  nodesize = nodesize
+) -> churn_forest_tuned.rf
+toString(nodesize) -> model.name
+churn_forests[[model.name]] <- churn_forest_tuned.rf
+  
+}
+
+
+# Compare Median and Mean Accuracy
+resamples(churn_forests) %>% summary(metric = "Accuracy")
+
+
+```
+
+
+
+###Hyperparameter Tuning: **mtry**
+
+Lets do the same thing now for the randomly selected predictors, using our previously optimized **nodesize** value of 3. Here however the functionality of looping through the **mtry** values and selecting the best one is built in to the model tuning
+
+
+```{r}
+
+# create empty list to store all models
+churn_forests <- list()
+
+# iterate through different mtry
+
+train(
+  Churn ~ tenure + TotalCharges + MonthlyCharges + Contract + InternetService + PaymentMethod + TechSupport,
+  data = churn_train.df,
+  method = "rf",
+  trControl = trainControl("cv", number = 10, search = "random"),
+  importance = T,
+  nodesize = 3,
+  tuneGrid = expand.grid(mtry = c(1,2,3,4))
+) -> churn_forest_tuned.rf
+
+
+# Final Model
+churn_forest_tuned.rf$finalModel
+
+
+```
+
+
+### Evaluating model with test predictions
+
+The OB estimate of error rate of 20.4% *slightly* improved over the prior 20.87%
+
+
+```{r}
+
+# predictions
+
+predict(
+  churn_forest_tuned.rf,
+  newdata = churn_test.df,
+  ) -> churn_forest_tuned.pred
+
+```
+
+**AUC and RMSE**
+
+The initial model's AUC has further improved to 70.97% over the prior 65.46% and the RMSE is 45.56% very slightly improved. 
+
+
+```{r}
+
+# AUC plot
+# NOTE: must convert values to numeric to use function
+performance(
+  prediction( as.numeric(churn_forest_tuned.pred), as.numeric(churn_test.df$Churn) ),
+  measure = "tpr",
+  x.measure = "fpr"
+) -> churn_forest_tuned.perf 
+
+plot(churn_forest_tuned.perf)
+
+# AUC value
+print("AUC Value for this model is ")
+
+performance(
+  prediction( as.numeric(churn_forest_tuned.pred), as.numeric(churn_test.df$Churn) ),
+  measure = "auc",
+  )@y.values[[1]] 
+
+# RMSE
+print("RMSE Value for this model is ")
+RMSE( as.numeric(churn_forest_tuned.pred), as.numeric(churn_test.df$Churn) )
+
+```
+
+**Confusion Matrix**
+
+The Accuracy is still just under 80%, and the Specificity is 88.6%, while Sensitivity performs fairly poorly at 53.35%
+
+
+```{r}
+
+# confusion matrix
+
+caret::confusionMatrix(
+  data = relevel(churn_forest_tuned.pred, ref = "Yes"),
+  reference = relevel(churn_test.df$Churn, ref = "Yes")
+)
+
+
+```
+
+
+
+### Unbalanced Levels: Downsampling
+
+
+One of the challenges is we have very skewed samples with regard to the number of customers with "Yes" vs "No" in the Churn
+
+We can modify the training to account for this by enabling **down-sampling** which takes this imbalance into account when selecting the folds for cross-validation
+
+
+
+```{r}
+
+train(
+  Churn ~ tenure + TotalCharges + MonthlyCharges + Contract + InternetService + PaymentMethod + TechSupport,
+  data = churn_train.df,
+  method = "rf",
+  metric = "Accuracy",
+  preProcess = c("scale","center"),
+  trControl = trainControl(
+    method = "repeatedcv", 
+    number = 10, 
+#    repeats = 10,
+    savePredictions = "final",
+    allowParallel = T,
+    verboseIter = F,
+    search = "random",
+    sampling = "down"
+    ),
+  importance = T,
+  tuneGrid = expand.grid(mtry = 3),
+  nodesize = 3
+) -> churn_forest_sized.rf
+
+
+#final model
+churn_forest_sized.rf$finalModel
+
+
+```
+
+
+The OB estimate of error rate of 23% is actually worse than the earlier 20.4%
+
+
+
+```{r}
+
+# predictions
+
+predict(
+  churn_forest_sized.rf,
+  newdata = churn_test.df,
+  ) -> churn_forest_sized.pred
+
+```
+
+
+Also the model's AUC has gone down sligthly from 77.8% to 75.37% while the RMSE is improved from 50% to 52.45%
+
+
+```{r}
+
+# AUC plot
+# NOTE: must convert values to numeric to use function
+performance(
+  prediction( as.numeric(churn_forest_sized.pred), as.numeric(churn_test.df$Churn) ),
+  measure = "tpr",
+  x.measure = "fpr"
+) -> churn_forest_sized.perf 
+
+plot(churn_forest_sized.perf)
+
+# AUC value
+print("AUC Value for this model is ")
+
+performance(
+  prediction( as.numeric(churn_forest_sized.pred), as.numeric(churn_test.df$Churn) ),
+  measure = "auc",
+  )@y.values[[1]] 
+
+# RMSE
+print("RMSE Value for this model is ")
+RMSE( as.numeric(churn_forest_sized.pred), as.numeric(churn_test.df$Churn) )
+
+```
+
+
+However, looking at the confusion matrix we can see our Sensitivity is the highest yet at 81.5%. Accuracy is down to 72.5% and Specificity down significantly to just under 70%
+
+In conclusion we have tuned the model to predicting the specific metric we want. In this case how accurately do we predict churn from the customers who actually churn
+
+
+```{r}
+
+# confusion matrix
+
+caret::confusionMatrix(
+  data = relevel(churn_forest_sized.pred, ref = "Yes"),
+  reference = relevel(churn_test.df$Churn, ref = "Yes")
+)
+
+
+```
+
+
+
+
+
+
+
+
+
